@@ -1,0 +1,893 @@
+---
+title: "Project 4 - Oregon Election Contributions Version 3"
+author: "Sherry Parker"
+date: "April 20, 2016"
+output: html_document:
+  fig_width: 5
+  fig_height: 6
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+# Project 4 - Evaluate Oregon Contributions   
+#           to the 2016 Presidential Election   
+#            April 1, 2015 through Sept 29, 2015
+***
+
+## Data Information   
+## Notes: The data runs from April 1, 2015 through Sept 29, 2015   
+## and includes all candidates   
+ 
+  
+```{r libraries}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(scales)
+```
+
+
+```{r create palletes}
+#color blind friendly pallete from 
+#http://www.cookbook-r.com/Graphs/Colors_%28ggplot2%29/
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", 
+                "#0072B2", "#D55E00", "#CC79A7")
+
+#Color palette for Political Party
+party_color <- c("DEMOCRAT" = "blue", "REPUBLICAN" =  "red")
+
+#Color palette for Political Party
+gen_color <- c("MALE" = "chartreuse4", "FEMALE" =  "darkorchid1")
+```
+
+```{r set themes}
+#Create a few custom themes for use in plotting with help from
+#http://docs.ggplot2.org/dev/vignettes/themes.html
+
+basic_theme <-   theme(
+        plot.title = element_text(size=22),
+        axis.title.y = element_text(size=16),
+        axis.title.x = element_text(size=16),
+        legend.title = element_blank())
+
+adv_theme <-   theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size=22),
+        axis.title.y = element_text(size=16),
+        axis.title.x = element_text(size=16),
+        legend.title = element_blank())
+```
+
+
+```{r import data}
+#Import Contributions for 2016 Election from Oregon
+cont_table <- read.csv("P00000001-OR.csv")
+
+#Basics data info
+#Added Candidate Political Party, Candidate Gender, and County columns to the
+#original data set.
+
+#Adjust date information to Year-Month combo for grouping purposes
+cont_table$contb_receipt_dt <- as.Date(cont_table$contb_receipt_dt, format="%d-%b-%y")
+cont_table$mth_yr <- format.Date(cont_table$contb_receipt_dt, format="%b-%y")
+cont_table$mth_yr <- factor(cont_table$mth_yr)
+
+dim(cont_table)
+summary(cont_table)
+sapply(cont_table, class)
+
+first_date <- min(cont_table$contb_receipt_dt)
+last_date <- max(cont_table$contb_receipt_dt)
+
+first_date
+last_date
+
+#Lets wipe out the ones that are before 2015 and see what is left
+
+cont_table <- subset(cont_table, format(contb_receipt_dt, '%Y')=='2015')
+
+#verify date changes to master table
+first_date2 <- min(cont_table$contb_receipt_dt)
+last_date2 <- max(cont_table$contb_receipt_dt)
+
+first_date2
+last_date2                        
+
+#Yes that did the job correctly
+```
+
+***
+
+## Evaluate data by Candidate   
+Looking to see any patterns, trends, or anomolies that arise
+
+```{r Evaluate by Candidate}
+candidate_groups = group_by(cont_table, cand_nm)
+total_contb_amt <- sum(cont_table$contb_receipt_amt)
+total_n_contb <- max(cont_table$index)
+total_n_contb
+
+#Summary of contribution value statistics by candidate
+cont_table.fc_by_cand = summarise(candidate_groups,
+                             cand_mean = mean(contb_receipt_amt),
+                             cand_median = median(contb_receipt_amt),
+                             cand_sum = sum(contb_receipt_amt),
+                             cand_sum_pct = (cand_sum/total_n_contb),
+                             n = n(),
+                             cand_n_pct = (n/total_n_contb))
+
+cont_table.fc_by_cand <- arrange(cont_table.fc_by_cand, desc(cand_mean))
+
+cont_table.fc_by_cand2 <- arrange(cont_table.fc_by_cand, desc(n))
+
+###Boxplot of contributions per candidate
+#help from http://stackoverflow.com/questions/1330989/rotating-and-spacing-axis
+#-labels-in-ggplot2
+p1 <- ggplot(aes(x = cand_nm, y = contb_receipt_amt), data = cont_table) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma) +
+  basic_theme +
+  ggtitle("Contributions by Candidate - BoxPlot") +
+  xlab("Candidates") +
+  ylab("Contribution Amount")
+p1
+#I find it interesting that some of the box plots show a greater spread than 
+#others do. Also this shows that there are negative values which are unexpected.
+```
+***
+
+```{r Evaluate by Candidate2}
+###Do candidates that have a smaller mean contribution have more contributors
+#(mean contribution vs # of contributions)
+#Chart of mean contributions compared to number of contributors
+
+p2 <- ggplot(aes(x = cand_mean, y = n, color = cand_nm), 
+             data = cont_table.fc_by_cand) +
+  geom_point() +
+  scale_y_continuous(labels = comma) +
+  basic_theme +
+  ggtitle("Mean Contributions vs Number of Contributions") +
+  xlab("Mean Amount of Contributions") +
+  ylab("Number of Contributions")
+p2
+
+```
+
+
+There appears to be a relationship between contribution size and number 
+of contributors but it is not linear. Also with so many candidates it is hard.   
+
+The highest number of contributions is `r max(cont_table.fc_by_cand$n)`.   
+The largest Mean Contribution is `r max(cont_table.fc_by_cand$cand_mean)`.   
+
+***
+
+```{r Eval by Cand3}
+
+#to know which color goes with who.  Looking at those under $200 mean should 
+#help that some.
+
+
+p2a <- ggplot(aes(x = cand_mean, y = n, color = cand_nm), 
+              data = subset(cont_table.fc_by_cand, 
+                            (cand_mean <= 200 & cand_mean > 0))) +
+  geom_point() +
+  scale_color_manual(values = cbbPalette,
+                     guide = guide_legend(title = 'Candidate', 
+                                          reverse = T,
+                                          override.aes = list(alpha = 1, 
+                                                              size = 2))) +
+  scale_y_continuous(labels = comma) +
+  basic_theme +
+  ggtitle("Mean Contributions vs Number of Contributions - Mean $200 or less") +
+  xlab("Mean Contributions Amount") +
+  ylab("Number of Contributions")
+p2a
+#It would appear that there is no direct correlation
+```
+***
+
+
+## Total contributions by candidate
+
+```{r Eval by Cand 4}
+#Plotted as a bar chart
+p3 <- ggplot(aes(x = cand_nm, y = cand_sum), data = cont_table.fc_by_cand) +
+  geom_bar(stat = "identity") + 
+  scale_y_continuous(labels = dollar) +
+  adv_theme +
+  ggtitle("Total Contributions by Candidate") +
+  xlab("Candidates") +
+  ylab("Total Contribution Amount")
+p3
+
+#Stacked Bar Chart
+p3a <- ggplot(aes(x = "", y = cand_sum_pct, fill = cand_nm), 
+              data = cont_table.fc_by_cand2) +
+  geom_bar(width = .5, stat = "identity") +
+  basic_theme +
+  ggtitle("Total Contributions by Candidate") +
+  xlab("Candidates") +
+  ylab("Percentage of Sum")
+p3a
+
+
+```
+***
+
+## Top 5 Candidates by Total Contributions
+
+```{r top 5 cand}
+#top 5 by contributions
+head(cont_table.fc_by_cand2, 5)
+
+#Set of the top 5 candidates to use for later analysis
+top_five = subset(cont_table, cand_nm == "Sanders, Bernard" |
+                    cand_nm == "Carson, Benjamin S." |
+                    cand_nm == "Clinton, Hillary Rodham" |
+                    cand_nm == "Cruz, Rafael Edward 'Ted'" |
+                    cand_nm == "Paul, Rand")
+```
+
+
+## Evaluate by Political Party   
+Looking to see any patterns, trends, or anomolies that arise   
+
+```{r Evaluate by Political Party}
+
+
+#Do Oregonions support Democrats or Republicans more 
+#(Total contributions by party)
+
+party_group = group_by(cont_table, cand_party)
+
+cont_table.fc_by_party = summarise(party_group,
+                                  party_mean = mean(contb_receipt_amt),
+                                  party_median = median(contb_receipt_amt),
+                                  party_sum = sum(contb_receipt_amt),
+                                  n = n())
+
+p3c <- ggplot(aes(x = cand_party, y = party_sum,
+                  fill=cand_party), 
+              data = cont_table.fc_by_party) +
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values=party_color) +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions by Party") +
+  xlab("Political Party") +
+  ylab("Total Contributions")
+p3c
+#I am surprised to see the total contributions between the two parties to be
+#so close.  I guess living in the Urban "blue" part of the state jaded my
+#expectations.
+
+
+```
+
+Total for Democrat donations: `r cont_table.fc_by_party$party_sum[cont_table.fc_by_party$cand_party=="DEMOCRAT"]`
+   
+Total for Republican donations: `r cont_table.fc_by_party$party_sum[cont_table.fc_by_party$cand_party=="REPUBLICAN"]`
+
+
+## Evaluate by Candidate Gender
+Looking to see any patterns, trends, or anomolies that arise  
+
+```{r Evaluate by Candidate Gender}
+#Do Oregonions support Female or Male Candidates more 
+#(Total contributions by gender of candidate)
+
+gen_group = group_by(cont_table, cand_gen)
+
+cont_table.fc_by_gen = summarise(gen_group,
+                                  gen_mean = mean(contb_receipt_amt),
+                                  gen_median = median(contb_receipt_amt),
+                                  gen_sum = sum(contb_receipt_amt),
+                                  n = n())
+
+p3d <- ggplot(aes(x = cand_gen, y = gen_sum,
+                  fill=cand_gen), 
+              data = cont_table.fc_by_gen) +
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values=gen_color) +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions Grouped by Candidate Gender") +
+  xlab("Gender of Candidates") +
+  ylab("Total Contributions")
+p3d
+
+```
+
+Total for Donations for Female Candidates: `r cont_table.fc_by_gen$gen_sum[cont_table.fc_by_gen$cand_gen=="FEMALE"]`   
+
+Total for Donations for Male Candidates: `r cont_table.fc_by_gen$gen_sum[cont_table.fc_by_gen$cand_gen=="MALE"]`   
+
+***
+
+## Evaluate zip code
+Looking to see any patterns, trends, or anomolies that arise
+
+```{r Evaluate by zip code}
+
+#What about by zip code (total contributions by party colored party 
+#and faceted by candidate)
+#help from http://stackoverflow.com/questions/33199203/
+#r-how-to-display-the-first-n-characters-from-a-string-of-words
+
+#create column for 5 digit zip to consolidate
+cont_table$zip5 = substr(cont_table$contbr_zip, start=1, stop=5)
+
+zip_group = group_by(cont_table,zip5)
+
+cont_table.fc_by_zip = summarise(zip_group,
+                                  zip_mean = mean(contb_receipt_amt),
+                                  zip_median = median(contb_receipt_amt),
+                                  zip_sum = sum(contb_receipt_amt),
+                                  n = n())
+
+p4 <- ggplot(aes(x = zip5, y = zip_sum), 
+             data = cont_table.fc_by_zip) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma) +
+  basic_theme +
+  ggtitle("Total Contributions by 5-digit Zip Code") +
+  xlab("Zip Code") +
+  ylab("Total Contributions")
+p4
+
+```
+
+Too many for this to be very meaningful.  Let's see what the top 5
+are and graph just those.   
+
+Mean Contribution by zip-code: `r mean(cont_table.fc_by_zip$zip_mean)`   
+
+```{r top 5 zip}
+
+cont_table.fc_by_zip <- arrange(cont_table.fc_by_zip, desc(zip_sum))
+
+head(cont_table.fc_by_zip, 5)
+
+cont_table.fc_by_zip_top5 <- subset(cont_table.fc_by_zip,
+                                    zip5 == "97201" |
+                                    zip5 == "97210" |
+                                    zip5 == "97219" |
+                                    zip5 == "97221" |
+                                    zip5 == "97405")
+
+p4a <- ggplot(aes(x = zip5, y = zip_sum), 
+             data = cont_table.fc_by_zip_top5) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions by 5-digit Zip Code") +
+  xlab("Zip Code") +
+  ylab("Total Contributions")
+p4a
+
+```
+
+This looks better, at least it is readable on the y-axis   
+
+Mean: `r mean(cont_table.fc_by_zip_top5$zip_mean)`   
+
+This is quite a bit higher than the mean using all zip codes   
+
+***
+## Evaluate Candidate and Party through time
+Looking to see any patterns, trends, or anomolies that arise   
+
+```{r Evaluate by Candidate and Party over time}
+#Create a data frame to sum by month for time related graphing
+cont_table.fc_by_summarize  <- 
+  cont_table  %>% 
+  group_by(cand_nm, mth_yr, cand_gen, cand_party) %>%
+  summarise(monthly_total = sum(contb_receipt_amt))
+
+#Create a sorting order for the months
+mth_sort = factor(cont_table.fc_by_summarize$mth_yr, levels = c("Apr-15","May-15","Jun-15","Jul-15","Aug-15","Sep-15"))
+
+
+#Graph all contributions through time for each candidate
+p5 <- ggplot(aes(x = mth_sort, y = monthly_total, 
+                 fill = cand_party), 
+             data = cont_table.fc_by_summarize)+
+  geom_bar(stat="identity") +
+  facet_wrap( ~ cand_nm) +
+  scale_fill_manual(values=party_color) +
+  scale_y_continuous(label = dollar) +
+  adv_theme +
+  ggtitle("Contributions through time - All Candidates") +
+  xlab("Month") +
+  ylab("Contributions")
+p5
+
+```
+
+We can see that Clinton has a high point that is throwing off the graph for all
+other candidates.   
+
+## Evaluate Democrats only
+
+```{r Evaluate the Democrats over time}
+
+#comparison of just the democratic contributions over time with help from
+#http://docs.ggplot2.org/current/scale_date.html
+p6 <- ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, 
+                 color = cand_nm), 
+                   data = subset(cont_table, 
+                                 contb_receipt_amt > 0 & 
+                                   cand_party == "DEMOCRAT")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_y_continuous(limits = c(0, 3000),
+                     breaks = c(0, 500, 1000, 1500, 2000, 2500, 3000),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Democrate contributions through time - Democrats") +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p6
+
+```
+
+This chart shows that people prefer to contribute at round numbers like $500, 
+or $1000.  you can also see that there are a number at $2700. Lots of noise 
+below $250 so digging deeper.   
+
+
+```{r dems over time2}
+#What about in the busy lower range under $300
+p6a <- ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, 
+                  color = cand_nm), 
+                   data = subset(cont_table, 
+                                 contb_receipt_amt > 0 & 
+                                   cand_party == "DEMOCRAT")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_y_continuous(limits = c(0, 300),
+                     breaks = c(0, 50, 100, 150, 200, 250, 300),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Democrate contributions through time - Democrats") +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p6a
+
+```
+
+Still see distinct lines at round numbers, which isn't really all 
+that surprising.   
+
+
+```{r dems over time 3}
+#What about the busy at the bottom still
+p6b <- ggplot(aes(x = contb_receipt_dt, 
+                  y = contb_receipt_amt, 
+                  color = cand_nm), 
+                   data = subset(cont_table, 
+                                 contb_receipt_amt > 0 & 
+                                   cand_party == "DEMOCRAT")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_color_manual(values = cbbPalette) +
+  scale_y_continuous(limits = c(0, 100),
+                     breaks = c(0, 25, 50, 100),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Democrate contributions through time - Democrats") +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p6b
+
+```
+
+Noticeably more donation for Sanders at this level, though Clinton's donations
+go back slightly further in time.     
+
+***
+## Evaluate Republicans Only
+
+```{r Evaluate the Republicans over time}
+p7 <- ggplot(aes(x = contb_receipt_dt, y = contb_receipt_amt, 
+                 color = cand_nm), 
+             data = subset(cont_table, 
+                           contb_receipt_amt > 0 & 
+                             cand_party == "REPUBLICAN")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_y_continuous(limits = c(0, 3000),
+                     breaks = c(0, 1000, 2000, 3000),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Republican contributions through time - Max $3,000") +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p7
+
+```
+
+You see the same pattern of round value contributions in the republicans too.
+Same visibilty issues on the low ranges, lets break this out more too.   
+
+```{r Republicans over time 2}
+p7a <- ggplot(aes(x = contb_receipt_dt, 
+                  y = contb_receipt_amt, 
+                  color = cand_nm), 
+             data = subset(cont_table, 
+                           contb_receipt_amt > 0 & 
+                             cand_party == "REPUBLICAN")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_y_continuous(limits = c(0, 300),
+                     breaks = c(0, 100, 200, 300),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Republican contributions through time - Max $300") +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p7a
+```
+
+Wow, lots of chatter in the data for Carson and Cruz.     
+Also several with nothing in this spot, should probably take them out.   
+
+```{r republicans over time 3}
+#Break it down again
+p7b <- ggplot(aes(x = contb_receipt_dt, 
+                  y = contb_receipt_amt, 
+                  color = cand_nm), 
+             data = subset(cont_table, 
+                           contb_receipt_amt > 0 &
+                             cand_party == "REPUBLICAN")) +
+  geom_point() +
+  facet_wrap(~ cand_nm) +
+  scale_y_continuous(limits = c(0, 100),
+                     breaks = c(0, 25, 50, 75, 100),
+                     label = dollar) +
+  ggtitle("Republican contributions through time - Max $100") +
+  basic_theme +
+  xlab("Contribution Date") +
+  ylab("Contribution Amount")
+p7b
+
+```
+
+3 more with no data.  Surprised to see Trump on the lists here as I 
+understood he was not taking donations.      
+
+***
+## All candidates over time
+
+```{r candidates over time}
+
+#sum of donations over time colored by candidate
+time_cand_group = group_by(cont_table, mth_yr, cand_nm)
+
+cont_table.fc_by_date = summarise(time_cand_group,
+                                  dt_cand_sum = sum(contb_receipt_amt))
+
+
+p8 <- ggplot(aes(x = mth_sort, y = dt_cand_sum, color = cand_nm, group = cand_nm), 
+           data = cont_table.fc_by_date) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Total Monthly Contributions through Time") +
+  xlab("Contribution Date") +
+  ylab("Contribution Total")
+p8
+
+```
+
+Lots of noise at the bottom, time to look at less then $50,000 a month.
+That will show a better plot as it removes the outlier that is skewing the 
+graph.
+
+```{r cands over time 2}
+
+p8a <- ggplot(aes(x = mth_sort, 
+                 y = dt_cand_sum, 
+                 color = cand_nm,
+                 group = cand_nm), 
+             data = cont_table.fc_by_date) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(limits = c(0, 50000),
+                     breaks = c(0, 10000, 20000, 30000, 40000, 50000),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions through time, monthly max $50,000") +
+  xlab("Contribution Date") +
+  ylab("Contribution Total")
+  
+p8a
+
+```
+
+The plot still has plenty of noise in it as there are so many candidates. We
+also see that some of the lines are broken by removing data points which
+prevents a continous line for candidates like Clinton that can bring in large
+dollar donations in a given month.  Let's look closer at the $10,000 and less
+to see what that shows.
+
+```{r cands over time 3}
+
+p8b <- ggplot(aes(x = mth_sort, 
+                 y = dt_cand_sum, 
+                 color = cand_nm,
+                 group = cand_nm), 
+             data = cont_table.fc_by_date) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(limits = c(0, 10000),
+                     breaks = c(0, 2000, 4000, 6000, 8000, 10000),
+                     label = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions through time, monthly max $10,000") +
+  xlab("Contribution Date") +
+  ylab("Contribution Total")
+  
+p8b
+
+```
+
+This plot allows you to better see the lower contributions of some candidates.
+Considering the low amounts they are bringing in monthly it is not surprising
+that these candidates have since dropped from the race.
+
+
+***
+
+What if we only look at the top candidates   
+
+```{r top 5 candidates over time}
+
+time_cand_group_five = group_by(top_five, mth_yr, cand_nm)
+
+cont_table.fc_by_date_five = summarise(time_cand_group_five,
+                                  dt_cand_sum = sum(contb_receipt_amt))
+
+p8b<- ggplot(aes(x = mth_sort2, 
+                 y = dt_cand_sum, 
+                 color = cand_nm,
+                 group = cand_nm), 
+             data = cont_table.fc_by_date_five) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(label = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions through time - Top 5 Candidates by Donations") +
+  xlab("Contribution Date") +
+  ylab("Contribution Total")
+p8b
+
+```
+
+It is intersting to see the trends through time in this graph. Still there is 
+the high point for Clinton in September.
+
+
+## Political Party Factored by County
+
+```{r by party factored by county}
+
+county_group = group_by(cont_table, county)
+
+cont_table.fc_by_county = summarise(county_group,
+                             county_mean = mean(contb_receipt_amt),
+                             county_median = median(contb_receipt_amt),
+                             county_sum = sum(contb_receipt_amt),
+                             n = n())
+
+cont_table.fc_by_county <- arrange(cont_table.fc_by_county, desc(county_sum))
+
+all_county_agg <- aggregate(contb_receipt_amt~cand_party+county,cont_table,sum)
+
+
+#Total Contributions for each party factored by county
+p9 <- ggplot(aes(x = cand_party,  y = contb_receipt_amt, fill = cand_party), 
+             data = all_county_agg) +
+  facet_wrap(~county) +
+  scale_fill_manual(values=party_color) +
+  geom_bar(stat = "identity", position = "identity") +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Contribution by County") +
+  xlab("Political Party") +
+  ylab("Contribution Amount")
+p9
+
+# This makes it clear that most of the counties have smaller donation amounts.
+#Lets just look at the top 3 counties.
+
+
+```
+
+```{r top cand by county }
+#Lets graph it
+
+p9aa <- ggplot(aes(x = county,  y = county_sum), 
+               data = cont_table.fc_by_county) +
+  geom_bar(stat = "identity", position = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Total Contributions by County") +
+  xlab("County") +
+  ylab("Contribution Total")
+
+p9aa
+#Not at all surprising considering that the Portland Area accounts for a 
+#significant portion of Oregon's population.
+
+
+
+#Lets look at just the heavy hitters, which are not surprisingly the 
+#population dense urban and suburban counties around the Portland 
+#Metrolopolitan area.
+
+#Create a listing of the 3 top counties based on contribution totals
+cont_lead_counties = subset(cont_table, county == "Clackamas County" |
+                 county == "Multnomah County" |
+                 county == "Washington County")
+
+
+#Create lising of the 5 top candidates based on contribution totals
+lead_cand_five = subset(cont_lead_counties, cand_nm == "Sanders, Bernard" |
+                    cand_nm == "Carson, Benjamin S." |
+                    cand_nm == "Clinton, Hillary Rodham" |
+                    cand_nm == "Cruz, Rafael Edward 'Ted'" |
+                    cand_nm == "Paul, Rand")
+
+```
+
+# Final Evaluation Graphs
+These charts are the final charts showing more detailed analysis   
+
+``` {r final evaluation graph 1}
+#And now those three top counties by the top candidates.
+#Lets look at these counties by party, I would expect to find a lean towards 
+#democrat especially in Multnomah county, considering it is the urban base
+#of a historically "blue" state
+
+#Create aggregate data frame for graph
+#Aggregate total contributions accross can part and county
+#Assistant from:
+#https://learningstatisticswithr.wordpress.com/2012/11/28/a-simple-way-to-calculate-group-means-in-r/
+county_party_donation_totals <- 
+  aggregate(contb_receipt_amt~cand_party+county,cont_lead_counties,sum)
+
+
+p9a <- ggplot(aes(x = cand_party,  y = contb_receipt_amt, fill = cand_party), 
+              data = subset(county_party_donation_totals, contb_receipt_amt > 0)) +
+  facet_wrap( ~ county) +
+  scale_fill_manual(values=party_color) +
+  geom_bar(stat = "identity", position = "identity") +
+  scale_y_continuous(labels = dollar) +
+  basic_theme +
+  ggtitle("Three Counties with Highest Total Donation Dollars") +
+  xlab("Political Party") +
+  ylab("Contribution Amount")
+p9a
+
+#Aggregate data behind the plot
+tbl1 <- aggregate(contb_receipt_amt~cand_party+county, 
+                  county_party_donation_totals, sum)
+print(tbl1)
+```
+
+As expected there is more money coming in from Multnomah County compared
+to any of the others.  It is suprising for an area so often considered
+Blue that there is still considerable Republican donations. Also to see that 
+Clackamas county has more Republican donations was surprising, however
+there is a good portion of that county is rural which is likely causing that
+shift. It would be interesting to overlay the detailed zip codes onto a 
+map with this to see which parts of the county leaned which way.
+
+
+``` {r final eval graph 2}
+#Plot the total donation per candidate for the top 5 candidates by contribution 
+#also to see the comparison across them for the top 3 counties.  Expecting
+#the Democrat contributions to be more than the Republican.
+
+#Create aggregate of data to use in plotting
+#Aggregate total contributions across, party, county and candidate
+county_cand_donation_totals <- 
+  aggregate(contb_receipt_amt~cand_party+county+cand_nm,lead_counties_five,sum)
+
+
+#Graph showing the same three counties, divided by candidate and 
+#indicating parties.
+
+p9b <- ggplot(aes(x = cand_nm,  y = contb_receipt_amt, fill = cand_party), 
+              data = subset(county_cand_donation_totals, 
+                            contb_receipt_amt > 0)) +
+  facet_wrap( ~ county) +
+    scale_fill_manual(values=party_color) +
+  geom_bar(stat = "identity", position = "identity") +
+  adv_theme +
+  scale_y_continuous(labels = dollar) +
+  ggtitle("Top Five Candidates with Highest Total Donation Dollars in
+          highest Donation Counties") +
+  xlab("Candidates") +
+  ylab("Contribution Amount")
+p9b
+
+#Aggregate data behind the plot
+tbl2 <- aggregate(contb_receipt_amt~cand_nm+county, lead_counties_five, sum)
+print(tbl2)
+```
+
+Clearly in these counties there is far more support for Democratic candidates.
+And in all counties Clinton is drawing more donation than Sanders, and 
+Carson is drawing more donations than his counterparts.
+
+
+```{r final eval graph 3}
+
+#Look at the top 5 candidates by monthly total contributions to see trends in
+#voter interest in a candidate.  I would expect to see some, such as Sanders,
+#increase over time as word spreads.
+
+top_five_only <- subset(cont_table.fc_by_summarize, cand_nm == "Sanders, Bernard" |
+                    cand_nm == "Carson, Benjamin S." |
+                    cand_nm == "Clinton, Hillary Rodham" |
+                    cand_nm == "Cruz, Rafael Edward 'Ted'" |
+                    cand_nm == "Paul, Rand")
+
+mth_sort2 = factor(top_five_only$mth_yr, levels = c("Apr-15","May-15","Jun-15","Jul-15","Aug-15","Sep-15"))
+
+p9c <- ggplot(aes(x = mth_sort2, y = monthly_total, fill = cand_party),
+              data = subset(top_five_only)) +
+  facet_wrap( ~ cand_nm) +
+  scale_fill_manual(values = party_color) +
+  geom_bar(stat = "identity", position = "identity") +
+  adv_theme +
+  scale_y_continuous(labels = dollar) +
+  ggtitle("Five Candidates with Highest Total Donation Dollars by Month") +
+  xlab("Date") +
+  ylab("Contribution Total")
+p9c
+
+#Aggregate data behind the plot
+tbl3 <- aggregate(monthly_total~cand_nm, top_five_only, mean)
+print(tbl3)
+
+```
+
+We can see that the support varies some from month to month, especially
+a large upswing in July for Clinton, it would be worth investigating what
+caused such a massive upswing that month.
+
+## Reflection
+
+Oregon has long been a Blue State when it comes to the Presidential elections,
+so finding that the Democratic Candidates had a greater support base was not
+unexpected.  I was also unsurprised to see that the top counties and zip codes
+are those that make up and surround the Portland area as it is the most 
+population dense.  It was interesting to see that even in these urban areas
+there was still a strong showing for Republican candidates, which I found 
+to be unexpected.  Overall the information presented matched expected results
+and was an interesting peak into the financial side of the election.   
+
+One of the challenges with this data set was manipulating the date information
+to be able to group them and to show them in the plots in the correct order.
+This required learning some new techniques that were not covered within the 
+online classes for the project.   
+
+I think an interesting further analysis would be to look within the top zip
+codes within the 4 digit extensions and determine if there are red or blue
+pockets that are clearly defined.  You could carry that information over to
+all the zip codes and do a breakdown of the red vs blue contributions per zip
+code.  One could use the ratio of democrat versus republican contributions to
+set different shades of color from blue through shades of purple to red.   
